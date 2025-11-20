@@ -141,7 +141,12 @@ The relationships between the entities are crucial for maintaining data integrit
 - **Product ↔ Order**: Many-to-Many (implemented via `Order_Details` junction table)
 
 ### 2.2 ER Diagram
-For a visual ER diagram, you can use tools like draw.io, Lucidchart, or an automated DB diagram generator. Entities: `Category`, `Product`, `Customer`, `Order`, `Order_Details`. Connect using the foreign keys described above. Consider exporting an SVG/PNG and placing it in the repo as `docs/er-diagram.png`.
+  <p align="center">
+    <picture>
+    <img src="Ecommerce_ERD.png" alt="Manager FlowChart" width="600">
+    </picture>
+    </p>
+    </n>
 
 ## 3. SQL Queries for Business Intelligence
 Below are example queries for common BI needs. Adjust names/quoting for your SQL dialect.

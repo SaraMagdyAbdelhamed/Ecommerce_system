@@ -147,87 +147,140 @@ For a visual ER diagram, you can use tools like draw.io, Lucidchart, or an autom
 Below are example queries for common BI needs. Adjust names/quoting for your SQL dialect.
 
 ### 3.1 Daily Revenue Report
-Summarize total revenue per day.
+Summarize total revenue for date.
 
 ```sql
 SELECT
-	DATE(order_date) AS order_day,
-	SUM(total_amount) AS daily_revenue,
-	COUNT(order_id) AS total_orders
-FROM `Order`
-GROUP BY DATE(order_date)
-ORDER BY order_day DESC;
+    DATE(o.order_date) AS report_date,
+    SUM(o.total_amount) AS total_revenue
+FROM
+    orders AS o
+WHERE
+    DATE(o.order_date) = 'date' -- Replace with your specific date
+GROUP BY
+    DATE(o.order_date);
 ```
 
 ### 3.2 Monthly Top-Selling Products
 List top N products by quantity sold for a given month.
 
 ```sql
--- Top 10 products for March 2025
-SELECT
-	p.product_id,
-	p.name,
-	SUM(od.quantity) AS total_quantity_sold,
-	SUM(od.quantity * od.unit_price) AS total_sales
-FROM Order_Details od
-JOIN Product p ON od.product_id = p.product_id
-JOIN `Order` o ON od.order_id = o.order_id
-WHERE o.order_date >= '2025-03-01'::date
-	AND o.order_date < '2025-04-01'::date
-GROUP BY p.product_id, p.name
-ORDER BY total_quantity_sold DESC
-LIMIT 10;
-```
 
-Note: the `::date` cast is PostgreSQL-style — for MySQL use `DATE(o.order_date) = '2025-03'` style predicates or appropriate functions.
+-- Top 10 products 
+SELECT
+    od.product_id,
+    SUM(od.quantity) AS total_quantity_sold
+FROM
+    order_details AS od
+JOIN
+    orders AS o ON od.order_id = o.order_id
+WHERE
+    YEAR(o.order_date) = Y AND MONTH(o.order_date) = M
+GROUP BY
+    od.product_id
+ORDER BY
+    total_quantity_sold DESC
+LIMIT 10;
+
+
+```
 
 ### 3.3 High-Value Customers (Past Month)
 Customers with the highest spend in the past 30 days.
 
 ```sql
 SELECT
-	c.customer_id,
-	c.first_name,
-	c.last_name,
-	c.email,
-	SUM(o.total_amount) AS total_spent,
-	COUNT(o.order_id) AS orders_count
-FROM Customer c
-JOIN `Order` o ON c.customer_id = o.customer_id
-WHERE o.order_date >= (CURRENT_DATE - INTERVAL '30 days')
-GROUP BY c.customer_id, c.first_name, c.last_name, c.email
-ORDER BY total_spent DESC
-LIMIT 20;
+    c.customer_id,
+    c.customer_name,
+    SUM(o.total_amount) AS total_spending_past_month
+FROM
+    customers AS c
+JOIN
+    orders AS o ON c.customer_id = o.customer_id
+WHERE
+    o.order_date >= DATEADD(month, -1, GETDATE())
+GROUP BY
+    c.customer_id, c.customer_name
+HAVING
+    SUM(o.total_amount) > 500
+ORDER BY
+    total_spending_past_month DESC;
 ```
 
 ## 4. Database Optimization: Denormalization
+4.1. Concept Overview
+Normalization is the process of organizing columns and tables in a relational database to minimize data redundancy. The schema provided is well-normalized (specifically, it appears to be in Third Normal Form, 3NF).
 
-### 4.1 Concept Overview
-Denormalization is the deliberate introduction of redundancy to reduce the number of joins and improve read performance for common queries. It's useful for read-heavy workloads, BI queries, and analytic reporting, but it increases storage and complicates writes/updates.
+Denormalization is the opposite process. It involves intentionally adding redundant data to one or more tables to improve query performance. By reducing the number of complex joins required for read operations, the database can retrieve data much faster.
 
-When to consider denormalization:
-- Frequent complex joins that slow down critical read paths.
-- High-read / low-write scenarios, such as reporting or dashboards.
+Advantage: Faster read queries (fewer joins).
+Disadvantage: Slower write/update operations, increased storage requirements, and risk of data inconsistency if not managed carefully. It's a trade-off between read performance and write complexity.
+4.2. Application Example: Customer and Order Entities
+Scenario:
+A very common use case is displaying a list of recent orders in a dashboard. For each order, we need to show the customer's name. In our normalized schema, this requires a JOIN between the "Order" and Customer tables.
 
-Trade-offs:
-- Faster reads for targeted queries.
-- More complex updates and potential for data inconsistency unless application logic or triggers keep denormalized fields synchronized.
+sql
 
-### 4.2 Application Example: Customer and Order Entities
-Example: If you frequently query customer orders and display the customer's full name and email with each order, you can denormalize by storing `customer_name` and `customer_email` on the `Order` record at creation time. This avoids a join when listing orders but requires careful handling if customer details change — either accept historical snapshots, update existing orders via background job, or disallow certain changes.
+-- Query in a NORMALIZED schema
+SELECT
+    o.order_id,
+    o.order_date,
+    o.total_amount,
+    c.first_name,
+    c.last_name
+FROM
+    "Order" o
+JOIN
+    Customer c ON o.customer_id = c.customer_id
+WHERE
+    o.order_id IN (101, 102, 103);
+If the Order table has millions of records, this join can become a performance bottleneck, especially under high traffic.
 
-Example denormalized columns on `Order`:
-- `customer_full_name` VARCHAR(255)
-- `customer_email` VARCHAR(255)
+Denormalization Strategy:
+We can denormalize the schema by adding the customer's name directly to the "Order" table.
 
-Populate these fields at order creation with the current customer info to create an immutable snapshot of what the customer looked like at purchase time.
+"Before" (Normalized Order Table):
 
----
+asciidoc
 
-## Next Steps
-- If you want, I can:
-	- Add an SQL file `schema.sql` with the DDL above.
-	- Create sample seed data and a small script to load it.
-	- Generate an ER diagram image and add it to `docs/er-diagram.png`.
+order_id | customer_id | order_date | total_amount
+---------------------------------------------------
+101      | 1           | 2023-10-26 | 150.00
+"After" (Denormalized Order Table):
+We add customer_name as a redundant column.
 
-Open an issue or reply with which of the above you'd like next.
+sql
+
+-- Modified table structure
+ALTER TABLE "Order" ADD COLUMN customer_name VARCHAR(201);
+The table would now look like this:
+
+asciidoc
+
+order_id | customer_id | order_date | total_amount | customer_name
+---------------------------------------------------------------------
+101      | 1           | 2023-10-26 | 150.00       | 'John Doe'
+Impact:
+
+Improved Read Performance: The query to fetch orders with customer names now becomes much simpler and faster, as it no longer requires a join.
+
+sql
+
+-- Query in a DENORMALIZED schema (faster)
+SELECT
+    order_id,
+    order_date,
+    total_amount,
+    customer_name
+FROM
+    "Order"
+WHERE
+    order_id IN (101, 102, 103);
+Increased Write/Update Complexity (The Trade-off):
+
+On Order Creation: When a new order is created, the application logic must fetch the customer's name and insert it into the new customer_name column in the "Order" table.
+On Customer Name Update: If a customer updates their name (e.g., John Doe to Jonathan Doe), a significant problem arises. You must not only update the Customer table but also find and update the customer_name in every single past order associated with that customer. This is a complex and potentially slow operation that can lead to data inconsistency if an update fails midway. This can be managed with database triggers or careful application-level logic, but it adds significant overhead.
+
+
+
+

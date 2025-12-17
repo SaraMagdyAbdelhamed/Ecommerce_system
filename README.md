@@ -270,7 +270,8 @@ List top 10 products by quantity sold for a given month.
 SELECT
     oi.product_id,
     p.name AS product_name,
-    SUM(oi.quantity) AS total_quantity_sold
+    SUM(oi.quantity) AS total_quantity_sold,
+    SUM(oi.quantity * oi.price) AS total_revenue
 FROM
     OrderItem AS oi
 JOIN
@@ -309,7 +310,14 @@ ORDER BY
 ```
 
 ### 3.4 Full-Text Search for Products
-Search for all products with the word "camera" in either the product name or description.
+To enable efficient text searching on product names and descriptions, add a FULLTEXT index:
+
+```sql
+ALTER TABLE Product 
+ADD FULLTEXT(name, description);
+```
+
+Search for all products with the word "camera" in either the product name or description:
 
 ```sql
 SELECT 

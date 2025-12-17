@@ -236,13 +236,7 @@ The relationships between the entities are crucial for maintaining data integrit
                                          └─────────────────┘
 ```
 
-<p align="center">
-  <picture>
-    <img src="Ecommerce_ERD.png" alt="E-commerce ERD" width="600">
-  </picture>
-</p>
 
----
 
 ## 3. SQL Queries for Business Intelligence
 

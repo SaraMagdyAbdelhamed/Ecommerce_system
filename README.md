@@ -18,7 +18,15 @@ This document outlines the database schema, relationships, and key business-inte
 	- [3.6 Transaction Locking Queries](#36-transaction-locking-queries)
 - [4. Sales History Trigger](#4-sales-history-trigger)
 - [5. Database Optimization: Denormalization](#5-database-optimization-denormalization)
-- [6- MassData Generation] (#6-Mass Data Generation & Initialization)
+- [6. Mass Data Generation & Initialization](#6-mass-data-generation--initialization)
+	- [6.1 Data Pool Setup](#61-data-pool-setup)
+	- [6.2 SetupAuthors](#62-setupauthors)
+	- [6.3 SetupCategories](#64-setupcategories)
+	- [6.4 SetupProducts](#65-setupproducts)
+	- [6.5 SetupCustomers](#66-setupcustomers)
+	- [6.6 SetupOrdersOnly](#67-setupordersonly)
+	- [6.7 SetupOrderItemsBatched](#68-setuporderitemsbatched)
+	- [6.8 Execution Workflow](#69-execution-workflow)
 
 ---
 
@@ -557,15 +565,17 @@ WHERE
 ```
 
 **Trade-off:** On customer name updates, you must update both the Customer table and all associated orders.
+
 -----------------------------------------------
 ## 6. Mass Data Generation & Initialization
 
 To simulate a real-world environment, this project uses Cross-Join Data Generation. This method allows for the insertion of millions of rows in seconds by mathematically multiplying small "pool" tables, bypassing the performance bottlenecks of standard loops.
 
-6.1 Data Pool Setup
+### 6.1 Data Pool Setup
 Before running procedures, permanent pool tables are created to act as the "DNA" for generating realistic names and titles.
--- 1. Create permanent pool tables
+
 ```sql
+-- 1. Create permanent pool tables
 CREATE TABLE IF NOT EXISTS Pool_Adjectives (word VARCHAR(50));
 CREATE TABLE IF NOT EXISTS Pool_Nouns (word VARCHAR(50));
 CREATE TABLE IF NOT EXISTS Pool_Words (word VARCHAR(50));
@@ -581,17 +591,42 @@ INSERT INTO Pool_Cats VALUES ('Electronics'),('Home'),('Books'),('Clothing'),('H
 INSERT INTO Pool_First_Names VALUES ('James'),('Mary'),('Robert'),('Patricia'),('John'),('Jennifer'),('Michael'),('Linda'),('David'),('Elizabeth');
 INSERT INTO Pool_Last_Names VALUES ('Smith'),('Johnson'),('Williams'),('Brown'),('Jones'),('Garcia'),('Miller'),('Davis'),('Rodriguez'),('Martinez');
 
--- Generate 30 distinct Authors from name pools
+-- Generate 30 distinct Authors from name pools (Initial Setup)
 INSERT INTO Author (author_name)
 SELECT CONCAT(f.name, ' ', l.name)
 FROM Pool_First_Names f CROSS JOIN Pool_Last_Names l LIMIT 30;
+```
 
+### 6.2 SetupAuthors
+**Description**: This function populates the Author table with 30 unique names. It acts as the "Brand" or "Creator" registry for the products. By using a CROSS JOIN between the first and last name pools, it creates realistic human names rather than generic placeholders.
+
+**Logic**: It combines the Pool_First_Names and Pool_Last_Names tables. Since each pool contains 10 names, the cross-join creates 100 possible combinations, which we then LIMIT to the required 30.
+
+```sql
+DELIMITER //
+CREATE PROCEDURE SetupAuthors()
+BEGIN
+    -- Disable checks for a clean, fast insert
+    SET FOREIGN_KEY_CHECKS = 0;
+    
+    -- Insert 30 unique names by mixing first and last name pools
+    INSERT INTO Author (author_name)
+    SELECT DISTINCT CONCAT(f.name, ' ', l.name)
+    FROM Pool_First_Names f
+    CROSS JOIN Pool_Last_Names l
+    LIMIT 30;
+    
+    SET FOREIGN_KEY_CHECKS = 1;
+END //
+DELIMITER ;
 ```
 
 
+### 6.3 SetupCategories
+**Description**: This function initializes the product hierarchy. It combines adjectives (like "Smart") with base category names (like "Electronics") to create a diverse set of 100 unique categories.
 
-1. SetupCategories()
-   Description: This function initializes the product hierarchy. It combines adjectives (like "Smart") with base category names (like "Electronics") to create a diverse set of 100 unique categories.Logic: It uses a CROSS JOIN between Pool_Adjectives and Pool_Cats ($10 \times 10 = 100$) to generate the names.
+**Logic**: It uses a CROSS JOIN between Pool_Adjectives and Pool_Cats ($10 \times 10 = 100$) to generate the names.
+
 ```sql
 DELIMITER //
 CREATE PROCEDURE SetupCategories()
@@ -603,10 +638,13 @@ BEGIN
 END //
 DELIMITER ;
 ```
-2. SetupProducts()
-Description: This function populates the digital catalog. It generates 200,000 unique products by mixing multiple word pools. It randomly assigns each product to an existing category and author. Logic: It uses a nested CROSS JOIN and a multiplier subquery to explode the dataset to 200,000 rows in a single operation.
-```sql
 
+### 6.4 SetupProducts
+**Description**: This function populates the digital catalog. It generates 200,000 unique products by mixing multiple word pools. It randomly assigns each product to an existing category and author.
+
+**Logic**: It uses a nested CROSS JOIN and a multiplier subquery to explode the dataset to 200,000 rows in a single operation.
+
+```sql
 DELIMITER //
 CREATE PROCEDURE SetupProducts()
 BEGIN
@@ -630,11 +668,12 @@ END //
 DELIMITER ;
 ```
 
-3. SetupCustomers()
-   Description: This function creates 1,000,000 unique customer profiles. It ensures that every customer has a unique email address by appending a row number to the generated names.Logic: It joins first and last name pools and scales them up using three 10-row multipliers ($100 \times 10 \times 10 \times 10 = 1,000,000$).
+### 6.5 SetupCustomers
+**Description**: This function creates 1,000,000 unique customer profiles. It ensures that every customer has a unique email address by appending a row number to the generated names.
+
+**Logic**: It joins first and last name pools and scales them up using three 10-row multipliers ($100 \times 10 \times 10 \times 10 = 1,000,000$).
 
 ```sql
-
 DELIMITER //
 CREATE PROCEDURE SetupCustomers()
 BEGIN
@@ -654,10 +693,12 @@ END //
 DELIMITER ;
 ```
 
-5. SetupOrdersOnly()
-Description: This function generates the "Header" of the orders (2,000,000 rows). It assigns each order to a random customer and generates a random date within the last 2 years. Logic: By setting total_amount to 0 initially, it allows for a high-speed insert that bypasses complex price calculations until the items are added.
-```sql
+### 6.6 SetupOrdersOnly
+**Description**: This function generates the "Header" of the orders (2,000,000 rows). It assigns each order to a random customer and generates a random date within the last 2 years.
 
+**Logic**: By setting `total_amount` to 0 initially, it allows for a high-speed insert that bypasses complex price calculations until the items are added.
+
+```sql
 DELIMITER //
 CREATE PROCEDURE SetupOrdersOnly()
 BEGIN
@@ -675,10 +716,13 @@ BEGIN
 END //
 DELIMITER ;
 ```
-5. SetupOrderItemsBatched()
-Description: The most critical function for large datasets. It populates 5,000,000 line items. It uses a Batching Strategy to prevent "504 Gateway Timeouts" and database crashes. Logic: It uses a WHILE loop that commits every 100,000 rows. This clears the database memory periodically and ensures that if a crash occurs, the previous batches are safely saved.
-```sql
 
+### 6.7 SetupOrderItemsBatched
+**Description**: The most critical function for large datasets. It populates 5,000,000 line items. It uses a Batching Strategy to prevent "504 Gateway Timeouts" and database crashes.
+
+**Logic**: It uses a WHILE loop that commits every 100,000 rows. This clears the database memory periodically and ensures that if a crash occurs, the previous batches are safely saved.
+
+```sql
 DELIMITER //
 CREATE PROCEDURE SetupOrderItemsBatched()
 BEGIN
@@ -704,26 +748,19 @@ BEGIN
 END //
 DELIMITER ;
 ```
+### 6.8 Execution Workflow
+To maintain referential integrity, execute procedures in this order:
 
-7. SetupAuthors()
-Description: This function populates the Author table with 30 unique names. It acts as the "Brand" or "Creator" registry for the products. By using a CROSS JOIN between the first and last name pools, it creates realistic human names rather than generic placeholders. Logic: It combines the Pool_First_Names and Pool_Last_Names tables. Since each pool contains 10 names, the cross-join creates 100 possible combinations, which we then LIMIT to the required 30.
 ```sql
+CALL SetupAuthors();
 
-DELIMITER //
-CREATE PROCEDURE SetupAuthors()
-BEGIN
-    -- Disable checks for a clean, fast insert
-    SET FOREIGN_KEY_CHECKS = 0;
-    
-    -- Insert 30 unique names by mixing first and last name pools
-    INSERT INTO Author (author_name)
-    SELECT DISTINCT CONCAT(f.name, ' ', l.name)
-    FROM Pool_First_Names f
-    CROSS JOIN Pool_Last_Names l
-    LIMIT 30;
-    
-    SET FOREIGN_KEY_CHECKS = 1;
-END //
-DELIMITER ;
+CALL SetupCategories();
+
+CALL SetupProducts();
+
+CALL SetupCustomers();
+
+CALL SetupOrdersOnly();
+
+CALL SetupOrderItemsBatched();
 ```
-

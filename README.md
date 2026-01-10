@@ -18,6 +18,7 @@ This document outlines the database schema, relationships, and key business-inte
 	- [3.6 Transaction Locking Queries](#36-transaction-locking-queries)
 - [4. Sales History Trigger](#4-sales-history-trigger)
 - [5. Database Optimization: Denormalization](#5-database-optimization-denormalization)
+- [6- MassData Generation] (#6-Mass Data Generation & Initialization)
 
 ---
 
@@ -557,7 +558,8 @@ WHERE
 
 **Trade-off:** On customer name updates, you must update both the Customer table and all associated orders.
 -----------------------------------------------
-6. Mass Data Generation & Initialization
+## 6. Mass Data Generation & Initialization
+
 To simulate a real-world environment, this project uses Cross-Join Data Generation. This method allows for the insertion of millions of rows in seconds by mathematically multiplying small "pool" tables, bypassing the performance bottlenecks of standard loops.
 
 6.1 Data Pool Setup
@@ -588,7 +590,8 @@ FROM Pool_First_Names f CROSS JOIN Pool_Last_Names l LIMIT 30;
 
 
 
-1. SetupCategories()Description: This function initializes the product hierarchy. It combines adjectives (like "Smart") with base category names (like "Electronics") to create a diverse set of 100 unique categories.Logic: It uses a CROSS JOIN between Pool_Adjectives and Pool_Cats ($10 \times 10 = 100$) to generate the names.
+1. SetupCategories()
+   Description: This function initializes the product hierarchy. It combines adjectives (like "Smart") with base category names (like "Electronics") to create a diverse set of 100 unique categories.Logic: It uses a CROSS JOIN between Pool_Adjectives and Pool_Cats ($10 \times 10 = 100$) to generate the names.
 ```sql
 DELIMITER //
 CREATE PROCEDURE SetupCategories()
@@ -627,7 +630,8 @@ END //
 DELIMITER ;
 ```
 
-3. SetupCustomers()Description: This function creates 1,000,000 unique customer profiles. It ensures that every customer has a unique email address by appending a row number to the generated names.Logic: It joins first and last name pools and scales them up using three 10-row multipliers ($100 \times 10 \times 10 \times 10 = 1,000,000$).
+3. SetupCustomers()
+   Description: This function creates 1,000,000 unique customer profiles. It ensures that every customer has a unique email address by appending a row number to the generated names.Logic: It joins first and last name pools and scales them up using three 10-row multipliers ($100 \times 10 \times 10 \times 10 = 1,000,000$).
 
 ```sql
 
